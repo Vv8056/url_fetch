@@ -1,4 +1,4 @@
-fastapi
-uvicorn[standard]
-yt-dlp
-cachetools
+fastapi==0.115.12
+uvicorn[standard]==0.34.1
+yt-dlp==2025.03.31
+cachetools==5.5.2
