@@ -7,7 +7,7 @@ from fastapi.responses import JSONResponse
 from concurrent.futures import ThreadPoolExecutor
 from cachetools import TTLCache
 from cachetools.keys import hashkey
-import subprocess
+from yt_dlp import YoutubeDL
 import asyncio
 import logging
 import uvicorn
@@ -37,35 +37,41 @@ logger = logging.getLogger(__name__)
 # Thread pool
 executor = ThreadPoolExecutor(max_workers=20)
 
-# # Cache
-# audio_cache = TTLCache(maxsize=1000, ttl=3600)
+# Cache
+audio_cache = TTLCache(maxsize=1000, ttl=3600)
 
-# def get_cache_key(url: str):
-#     return hashkey(url)
+def get_cache_key(url: str):
+    return hashkey(url)
 
-# # Subprocess wrapper
-# async def run_yt_dlp_cached(yt_url: str) -> str:
-#     key = get_cache_key(yt_url)
-#     if key in audio_cache:
-#         logger.info(f"Cache hit for: {yt_url}")
-#         return audio_cache[key]
 
-#     logger.info(f"Cache miss. Running yt-dlp for: {yt_url}")
-#     loop = asyncio.get_event_loop()
-#     try:
-#         result = await loop.run_in_executor(
-#             executor,
-#             lambda: subprocess.check_output(['yt-dlp', '-g', '-f', 'bestaudio', yt_url])
-#         )
-#         audio_url = result.decode().strip()
-#         audio_cache[key] = audio_url
-#         return audio_url
-#     except subprocess.CalledProcessError as e:
-#         logger.error(f"yt-dlp error: {e}")
-#         raise HTTPException(status_code=500, detail="Failed to fetch audio URL from yt-dlp.")
-#     except Exception as e:
-#         logger.exception("Unexpected error while running yt-dlp")
-#         raise HTTPException(status_code=500, detail="Internal server error")
+# YT-DLP Python Module Wrapper
+async def extract_audio_url(yt_url: str) -> str:
+    key = get_cache_key(yt_url)
+    if key in audio_cache:
+        logger.info(f"Cache hit for: {yt_url}")
+        return audio_cache[key]
+
+    logger.info(f"Cache miss. Extracting audio for: {yt_url}")
+    loop = asyncio.get_event_loop()
+
+    try:
+        def run():
+            ydl_opts = {
+                'quiet': True,
+                'skip_download': True,
+                'format': 'bestaudio/best',
+            }
+            with YoutubeDL(ydl_opts) as ydl:
+                info = ydl.extract_info(yt_url, download=False)
+                return info['url']
+
+        audio_url = await loop.run_in_executor(executor, run)
+        audio_cache[key] = audio_url
+        return audio_url
+
+    except Exception as e:
+        logger.exception("yt-dlp module failed")
+        raise HTTPException(status_code=500, detail="Failed to extract audio URL.")
 
 @app.get("/")
 def root():
@@ -79,31 +85,6 @@ def root():
 async def favicon():
     return FileResponse("static/favicon.ico")
 
-# @app.get("/get_audio_url")
-# async def get_audio_url(url: str = Query(None, description="YouTube video URL")):
-#     if not url:
-#         raise HTTPException(status_code=400, detail="Missing YouTube video URL in 'url' query parameter.")
-    
-#     logger.info(f"Fetching audio URL for: {url}")
-#     audio_url = await run_yt_dlp_cached(url)
-#     return JSONResponse(content={"audio_url": audio_url})
-
-# Subprocess wrapper
-async def run_yt_dlp(yt_url: str) -> str:
-    loop = asyncio.get_event_loop()
-    try:
-        result = await loop.run_in_executor(
-            executor,
-            lambda: subprocess.check_output(['yt-dlp', '-g', '-f', 'bestaudio', yt_url])
-        )
-        return result.decode().strip()
-    except subprocess.CalledProcessError as e:
-        logger.error(f"yt-dlp error: {e}")
-        raise HTTPException(status_code=500, detail="Failed to fetch audio URL from yt-dlp.")
-    except Exception as e:
-        logger.exception("Unexpected error while running yt-dlp")
-        raise HTTPException(status_code=500, detail="Internal server error")
-
 # Audio URL extractor endpoint
 @app.get("/get_audio_url")
 async def get_audio_url(url: str = Query(None, description="YouTube video URL")):
@@ -111,7 +92,7 @@ async def get_audio_url(url: str = Query(None, description="YouTube video URL"))
         raise HTTPException(status_code=400, detail="Missing YouTube video URL in 'url' query parameter.")
     
     logger.info(f"Fetching audio URL for: {url}")
-    audio_url = await run_yt_dlp(url)
+    audio_url = await extract_audio_url(url)
     return JSONResponse(content={"audio_url": audio_url})
 
 # Run the app
