@@ -1,4 +1,6 @@
 # api/index.py
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse
 from fastapi import FastAPI, Query, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -23,6 +25,9 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Mount the static directory
+app.mount("/static", StaticFiles(directory="static"), name="static")
 
 # Logger
 logging.basicConfig(level=logging.INFO)
@@ -67,6 +72,11 @@ def root():
         "message": "Welcome to the YouTube Audio API!",
         "usage": "/get_audio_url?url=https://youtu.be/kKZCjHz2yEU"
     }
+
+# Serve favicon
+@app.get("/favicon.ico", include_in_schema=False)
+async def favicon():
+    return FileResponse("static/favicon.ico")
 
 @app.get("/get_audio_url")
 async def get_audio_url(url: str = Query(None, description="YouTube video URL")):
