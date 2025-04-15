@@ -10,6 +10,7 @@ from cachetools.keys import hashkey
 import subprocess
 import asyncio
 import logging
+import uvicorn
 
 app = FastAPI(
     title="YouTube Audio URL Extractor",
@@ -86,3 +87,7 @@ async def get_audio_url(url: str = Query(None, description="YouTube video URL"))
     logger.info(f"Fetching audio URL for: {url}")
     audio_url = await run_yt_dlp_cached(url)
     return JSONResponse(content={"audio_url": audio_url})
+
+# Run the app
+if __name__ == "__main__":
+    uvicorn.run("index:app")
